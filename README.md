@@ -47,3 +47,4 @@ To run this project locally on your machine:
    ```bash
    git clone <your-repo-url>
    cd badminton-scorecard
+   npm run dev
