@@ -1,15 +1,18 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
 
+// Custom APIs for renderer
 const api = {
   selectVideo: () => ipcRenderer.invoke('dialog:openFile'),
   
-  // Phase 3: Add export trigger and progress listener
-  exportVideo: (exportData) => ipcRenderer.invoke('video:export', exportData),
+  // NEW: The bridge for opening audio files!
+  openAudio: () => ipcRenderer.invoke('dialog:openAudio'),
+  
+  exportVideo: (data) => ipcRenderer.invoke('video:export', data),
   onExportProgress: (callback) => {
-    const subscription = (_event, percent) => callback(percent)
-    ipcRenderer.on('export:progress', subscription)
-    return () => ipcRenderer.removeListener('export:progress', subscription)
+    ipcRenderer.on('export:progress', (_event, value) => callback(value))
+    // Return an unsubscribe function to prevent memory leaks in React
+    return () => ipcRenderer.removeAllListeners('export:progress')
   }
 }
 

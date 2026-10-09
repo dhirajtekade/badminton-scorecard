@@ -7,32 +7,29 @@ import ffmpeg from 'fluent-ffmpeg'
 import ffmpegStatic from 'ffmpeg-static'
 
 // --- 100% FOOLPROOF FFMPEG BINARY FINDER ---
+// --- 100% FOOLPROOF FFMPEG BINARY FINDER (ASAR-AWARE) ---
 function getFFmpegPath() {
   const rawPath = ffmpegStatic.default || ffmpegStatic
-  const exeName = process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg'
-  
-  const candidates = [
-    rawPath,
-    rawPath ? rawPath.replace('app.asar', 'app.asar.unpacked') : null,
-    join(process.cwd(), 'node_modules', 'ffmpeg-static', exeName),
-    join(__dirname, '../../node_modules/ffmpeg-static', exeName),
-    process.resourcesPath ? join(process.resourcesPath, 'app.asar.unpacked', 'node_modules', 'ffmpeg-static', exeName) : null
-  ].filter(Boolean)
+  let ffmpegPath = rawPath
 
-  for (const candidate of candidates) {
-    if (fs.existsSync(candidate)) {
-      console.log('✅ Found valid FFmpeg binary at:', candidate)
-      return candidate
-    }
+  // 1. Production Fix: Force the path out of the compressed 'app.asar' archive
+  if (ffmpegPath && ffmpegPath.includes('app.asar')) {
+    ffmpegPath = ffmpegPath.replace('app.asar', 'app.asar.unpacked')
   }
 
-  console.error('❌ Could not find ffmpeg.exe in any candidate path!')
-  return rawPath || exeName
+  // 2. Dev Mode Fallback
+  if (!fs.existsSync(ffmpegPath)) {
+    const exeName = process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg'
+    ffmpegPath = join(process.cwd(), 'node_modules', 'ffmpeg-static', exeName)
+  }
+
+  console.log('✅ Resolved FFmpeg path:', ffmpegPath)
+  return ffmpegPath
 }
 
 const resolvedFFmpegPath = getFFmpegPath()
 ffmpeg.setFfmpegPath(resolvedFFmpegPath)
-// -------------------------------------------
+// --------------------------------------------------------
 
 // Helper: Convert seconds to ASS subtitle timestamp format (0:01:05.40)
 function formatASSTime(seconds) {
@@ -63,7 +60,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
     const item = timeline[i]
     const startTime = formatASSTime(item.startTime)
     const endTime = timeline[i + 1] ? formatASSTime(timeline[i + 1].startTime) : '99:59:59.99'
-    
+
     const p1Name = player1 || 'Player 1'
     const p2Name = player2 || 'Player 2'
 
@@ -136,61 +133,110 @@ app.whenReady().then(() => {
       videoUrl: pathToFileURL(filePaths[0]).href
     }
   })
+  ipcMain.handle('dialog:openAudio', async () => {
+    const { canceled, filePaths } = await dialog.showOpenDialog({
+      properties: ['openFile'],
+      filters: [{ name: 'Audio Files', extensions: ['mp3', 'wav', 'aac', 'm4a'] }]
+    })
+    if (canceled) return null
+    return filePaths[0]
+  })
 
   // Phase 3: HD Video Export with ASS Burn-In
-  ipcMain.handle('video:export', async (event, { videoPath, timeline, player1, player2 }) => {
-    const { canceled, filePath: savePath } = await dialog.showSaveDialog({
-      title: 'Export HD Video with Scorecard',
-      defaultPath: 'badminton_match_export.mp4',
-      filters: [{ name: 'MP4 Video', extensions: ['mp4'] }]
-    })
+  // Phase 4: HD Video Export with ASS Burn-In & Audio Mixing
+  // Phase 4: HD Video Export with ASS Burn-In, Audio Mixing, and Denoise!
+  ipcMain.handle(
+    'video:export',
+    async (
+      event,
+      { videoPath, timeline, player1, player2, bgmPath, videoVolume, bgmVolume, denoiseVideo }
+    ) => {
+      const { canceled, filePath: savePath } = await dialog.showSaveDialog({
+        title: 'Export HD Video with Scorecard',
+        defaultPath: 'badminton_match_export.mp4',
+        filters: [{ name: 'MP4 Video', extensions: ['mp4'] }]
+      })
 
-    if (canceled || !savePath) return { success: false, canceled: true }
+      if (canceled || !savePath) return { success: false, canceled: true }
+      if (videoPath === savePath)
+        return { success: false, error: 'Cannot overwrite the input video file directly!' }
 
-    if (videoPath === savePath) {
-      return { success: false, error: 'Cannot overwrite the input video file directly! Please choose a different name or folder.' }
-    }
+      const tempAssPath = join(savePath, '..', `temp_scoreboard_${Date.now()}.ass`)
+      createASSFile(timeline, player1, player2, tempAssPath)
+      const escapedAssPath = tempAssPath.replace(/\\/g, '/').replace(/:/g, '\\:')
 
-    const tempAssPath = join(savePath, '..', `temp_scoreboard_${Date.now()}.ass`)
-    createASSFile(timeline, player1, player2, tempAssPath)
+      const vVol = videoVolume !== undefined ? videoVolume / 100 : 1
+      const bVol = bgmVolume !== undefined ? bgmVolume / 100 : 0.5
 
-    const escapedAssPath = tempAssPath.replace(/\\/g, '/').replace(/:/g, '\\:')
+      // Set up the video audio filter chain (Apply Denoise BEFORE Volume if requested)
+      // nf=-25 drops the noise floor by 25dB (perfect for exhaust fans) without making voices sound like robots
+      const originalAudioFilter = denoiseVideo ? `afftdn=nf=-25,volume=${vVol}` : `volume=${vVol}`
 
-    return new Promise((resolve) => {
-      ffmpeg(videoPath)
-        .videoFilters(`ass='${escapedAssPath}'`)
-        .outputOptions([
-          '-c:v libx264',
-          '-preset fast',
-          '-crf 20',
-          '-c:a aac',
-          '-b:a 192k',
-          '-pix_fmt yuv420p',
-          '-y'
-        ])
-        .save(savePath)
-        .on('start', (commandLine) => {
-          console.log('🚀 Running FFmpeg command:', commandLine)
-        })
-        .on('progress', (progress) => {
-          event.sender.send('export:progress', {
-            percent: progress.percent && !isNaN(progress.percent) ? Math.round(progress.percent) : 0,
-            timemark: progress.timemark || '00:00:00',
-            fps: progress.currentFps ? Math.round(progress.currentFps) : 0
+      return new Promise((resolve) => {
+        let command = ffmpeg(videoPath)
+
+        if (bgmPath) {
+          command = command.input(bgmPath)
+          command = command
+            .complexFilter([
+              `[0:v]ass='${escapedAssPath}'[v]`,
+              `[0:a]${originalAudioFilter}[a1]`,
+              `[1:a]volume=${bVol}[a2]`,
+              `[a1][a2]amix=inputs=2:duration=first:dropout_transition=2[a]`
+            ])
+            .outputOptions([
+              '-map [v]',
+              '-map [a]',
+              '-c:v libx264',
+              '-preset fast',
+              '-crf 20',
+              '-c:a aac',
+              '-b:a 192k',
+              '-pix_fmt yuv420p',
+              '-y'
+            ])
+        } else {
+          command = command
+            .videoFilters(`ass='${escapedAssPath}'`)
+            .audioFilters(originalAudioFilter)
+            .outputOptions([
+              '-c:v libx264',
+              '-preset fast',
+              '-crf 20',
+              '-c:a aac',
+              '-b:a 192k',
+              '-pix_fmt yuv420p',
+              '-y'
+            ])
+        }
+
+        command
+          .save(savePath)
+          .on('start', (commandLine) => console.log('🚀 Running FFmpeg command:', commandLine))
+          .on('progress', (progress) => {
+            event.sender.send('export:progress', {
+              percent:
+                progress.percent && !isNaN(progress.percent) ? Math.round(progress.percent) : 0,
+              timemark: progress.timemark || '00:00:00',
+              fps: progress.currentFps ? Math.round(progress.currentFps) : 0
+            })
           })
-        })
-        .on('end', () => {
-          if (fs.existsSync(tempAssPath)) fs.unlinkSync(tempAssPath)
-          resolve({ success: true, savePath })
-        })
-        .on('error', (err, stdout, stderr) => {
-          console.error('❌ FFmpeg Error:', err.message)
-          console.error('🔍 FFmpeg Stderr Output:', stderr)
-          if (fs.existsSync(tempAssPath)) fs.unlinkSync(tempAssPath)
-          resolve({ success: false, error: `${err.message}\nCheck terminal for full FFmpeg log.` })
-        })
-    })
-  })
+          .on('end', () => {
+            if (fs.existsSync(tempAssPath)) fs.unlinkSync(tempAssPath)
+            resolve({ success: true, savePath })
+          })
+          .on('error', (err, stdout, stderr) => {
+            console.error('❌ FFmpeg Error:', err.message)
+            console.error('🔍 FFmpeg Stderr Output:', stderr)
+            if (fs.existsSync(tempAssPath)) fs.unlinkSync(tempAssPath)
+            resolve({
+              success: false,
+              error: `${err.message}\nCheck terminal for full FFmpeg log.`
+            })
+          })
+      })
+    }
+  )
 
   createWindow()
 
