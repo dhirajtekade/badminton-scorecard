@@ -165,6 +165,53 @@ app.whenReady().then(() => {
       videoUrl: pathToFileURL(filePaths[0]).href
     }
   })
+
+  // --- NEW: Select Multiple Videos ---
+  ipcMain.handle('dialog:openMultipleFiles', async () => {
+    const { canceled, filePaths } = await dialog.showOpenDialog({
+      properties: ['openFile', 'multiSelections'],
+      title: 'Select Videos to Merge (Hold Ctrl to select multiple)',
+      filters: [{ name: 'Videos', extensions: ['mp4', 'mov', 'mkv', 'avi'] }]
+    })
+    if (canceled) return null
+    return filePaths
+  })
+
+  // --- NEW: Merge Videos via FFmpeg ---
+  ipcMain.handle('video:merge', async (event, { filePaths }) => {
+    const { canceled, filePath: savePath } = await dialog.showSaveDialog({
+      title: 'Save Merged Video',
+      defaultPath: 'merged_match.mp4',
+      filters: [{ name: 'MP4 Video', extensions: ['mp4'] }]
+    })
+
+    if (canceled || !savePath) return { success: false, canceled: true }
+
+    return new Promise((resolve) => {
+      let command = ffmpeg()
+
+      // Load all selected videos into FFmpeg
+      filePaths.forEach((file) => {
+        command = command.input(file)
+      })
+
+      command
+        .on('start', (commandLine) => console.log('🚀 Merging videos:', commandLine))
+        .on('progress', (progress) => {
+          event.sender.send('export:progress', {
+            percent:
+              progress.percent && !isNaN(progress.percent) ? Math.round(progress.percent) : 0,
+            timemark: progress.timemark || '00:00:00',
+            fps: progress.currentFps ? Math.round(progress.currentFps) : 0
+          })
+        })
+        .on('end', () => resolve({ success: true, savePath }))
+        .on('error', (err) => resolve({ success: false, error: err.message }))
+        // Merge to the target path using the OS temp folder for intermediate processing
+        .mergeToFile(savePath, app.getPath('temp'))
+    })
+  })
+
   ipcMain.handle('dialog:openAudio', async () => {
     const { canceled, filePaths } = await dialog.showOpenDialog({
       properties: ['openFile'],

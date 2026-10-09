@@ -7,6 +7,10 @@ const api = {
   
   // NEW: The bridge for opening audio files!
   openAudio: () => ipcRenderer.invoke('dialog:openAudio'),
+
+  // NEW: Multi-file selection and merge bridge
+  selectMultipleVideos: () => ipcRenderer.invoke('dialog:openMultipleFiles'),
+  mergeVideos: (data) => ipcRenderer.invoke('video:merge', data),
   
   exportVideo: (data) => ipcRenderer.invoke('video:export', data),
   onExportProgress: (callback) => {

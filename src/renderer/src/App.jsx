@@ -57,6 +57,35 @@ function App() {
     if (result) setBgmPath(result)
   }
 
+  const handleMergeVideos = async () => {
+    if (isExporting || !window.api.selectMultipleVideos) return
+    const files = await window.api.selectMultipleVideos()
+
+    if (!files) return
+    if (files.length < 2) {
+      alert('Please select at least 2 videos to merge.')
+      return
+    }
+
+    setIsExporting(true)
+    setExportStats({ percent: 0, timemark: '00:00:00', fps: 0 })
+
+    try {
+      const result = await window.api.mergeVideos({ filePaths: files })
+      if (result && result.success) {
+        alert(`🎉 Videos merged successfully!\nSaved to: ${result.savePath}`)
+      } else if (result && !result.canceled) {
+        alert(`❌ Merge failed: ${result.error || 'Unknown error'}`)
+      }
+    } catch (err) {
+      alert('An error occurred during merge.')
+      console.error(err)
+    } finally {
+      setIsExporting(false)
+      setExportStats({ percent: 0, timemark: '00:00:00', fps: 0 })
+    }
+  }
+
   const handleExport = async () => {
     if (!videoData || isExporting) return
 
@@ -185,6 +214,24 @@ function App() {
         <h1 style={{ margin: 0, fontSize: '1.5rem' }}>🏸 Badminton Video Scorecard Editor</h1>
 
         <div style={{ display: 'flex', gap: '15px' }}>
+          {/* NEW MERGE BUTTON */}
+          <button
+            onClick={handleMergeVideos}
+            disabled={isExporting}
+            style={{
+              padding: '10px 20px',
+              fontSize: '1rem',
+              cursor: isExporting ? 'not-allowed' : 'pointer',
+              backgroundColor: '#6366f1', // Indigo color to stand out
+              color: 'white',
+              border: 'none',
+              borderRadius: '4px',
+              fontWeight: 'bold'
+            }}
+          >
+            🔗 Merge Videos
+          </button>
+
           <button
             onClick={handleOpenVideo}
             disabled={isExporting}
