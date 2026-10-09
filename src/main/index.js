@@ -41,7 +41,8 @@ function formatASSTime(seconds) {
 }
 
 // --- BROADCAST-GRADE VECTOR SCOREBOARD GENERATOR ---
-function createASSFile(timeline, player1, player2, outputPath) {
+// --- BROADCAST-GRADE DYNAMIC SCOREBOARD GENERATOR ---
+function createASSFile(timeline, player1, player2, currentSet, prevScores, outputPath) {
   let assContent = `[Script Info]
 ScriptType: v4.00+
 PlayResX: 1920
@@ -56,30 +57,61 @@ Style: Broadcast,Arial,26,&H00FFFFFF,&H000000FF,&H00000000,&H00000000,-1,0,0,0,1
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 `
 
+  // Dynamic Card Width: 260px (Names) + 60px per column
+  const baseWidth = 260
+  const columnWidth = 60
+  const totalWidth = baseWidth + currentSet * columnWidth
+
+  // Right-aligned column coordinates
+  const col1X = 295
+  const col2X = col1X + columnWidth
+  const col3X = col2X + columnWidth
+
   for (let i = 0; i < timeline.length; i++) {
     const item = timeline[i]
     const startTime = formatASSTime(item.startTime)
     const endTime = timeline[i + 1] ? formatASSTime(timeline[i + 1].startTime) : '99:59:59.99'
 
-    const p1Name = player1 || 'Player 1'
-    const p2Name = player2 || 'Player 2'
-
-    // Layer 0: Drop Shadow (offset at X=44, Y=44)
-    assContent += `Dialogue: 0,${startTime},${endTime},Broadcast,,0,0,0,,{\\pos(44,44)\\an7\\bord0\\shad0\\c&H000000&\\1a&H80&\\p1}m 0 0 l 320 0 l 320 145 l 0 145{\\p0}\n`
-    // Layer 1: Main Dark Slate Background Card (X=40, Y=40, BGR Hex: #2A170F)
-    assContent += `Dialogue: 1,${startTime},${endTime},Broadcast,,0,0,0,,{\\pos(40,40)\\an7\\bord0\\shad0\\c&H2A170F&\\1a&H26&\\p1}m 0 0 l 320 0 l 320 145 l 0 145{\\p0}\n`
-    // Layer 2: Sky-Blue Header Banner Strip
-    assContent += `Dialogue: 2,${startTime},${endTime},Broadcast,,0,0,0,,{\\pos(40,40)\\an7\\bord0\\shad0\\c&HC78402&\\1a&H00&\\p1}m 0 0 l 320 0 l 320 36 l 0 36{\\p0}\n`
-    // Layer 3: Header Text "🏸 SINGLES MATCH"
+    // Draw the expandable background cards
+    assContent += `Dialogue: 0,${startTime},${endTime},Broadcast,,0,0,0,,{\\pos(44,44)\\an7\\bord0\\shad0\\c&H000000&\\1a&H80&\\p1}m 0 0 l ${totalWidth} 0 l ${totalWidth} 145 l 0 145{\\p0}\n`
+    assContent += `Dialogue: 1,${startTime},${endTime},Broadcast,,0,0,0,,{\\pos(40,40)\\an7\\bord0\\shad0\\c&H2A170F&\\1a&H26&\\p1}m 0 0 l ${totalWidth} 0 l ${totalWidth} 145 l 0 145{\\p0}\n`
+    assContent += `Dialogue: 2,${startTime},${endTime},Broadcast,,0,0,0,,{\\pos(40,40)\\an7\\bord0\\shad0\\c&HC78402&\\1a&H00&\\p1}m 0 0 l ${totalWidth} 0 l ${totalWidth} 36 l 0 36{\\p0}\n`
     assContent += `Dialogue: 3,${startTime},${endTime},Broadcast,,0,0,0,,{\\pos(55,47)\\an7\\bord0\\shad0\\fnArial\\fs20\\b1\\c&HFFFFFF&}🏸 SINGLES MATCH\n`
-    // Layer 4: Player 1 Name
-    assContent += `Dialogue: 3,${startTime},${endTime},Broadcast,,0,0,0,,{\\pos(55,86)\\an7\\bord0\\shad0\\fnArial\\fs26\\b1\\c&HFCFAF8&}${p1Name}\n`
-    // Layer 5: Player 1 Score (Right-Aligned \an9 to X=345)
-    assContent += `Dialogue: 3,${startTime},${endTime},Broadcast,,0,0,0,,{\\pos(345,84)\\an9\\bord0\\shad0\\fnArial\\fs30\\b1\\c&HF8BD38&}${item.p1Score}\n`
-    // Layer 6: Player 2 Name
-    assContent += `Dialogue: 3,${startTime},${endTime},Broadcast,,0,0,0,,{\\pos(55,130)\\an7\\bord0\\shad0\\fnArial\\fs26\\b1\\c&HFCFAF8&}${p2Name}\n`
-    // Layer 7: Player 2 Score (Right-Aligned \an9 to X=345)
-    assContent += `Dialogue: 3,${startTime},${endTime},Broadcast,,0,0,0,,{\\pos(345,128)\\an9\\bord0\\shad0\\fnArial\\fs30\\b1\\c&HF8BD38&}${item.p2Score}\n`
+
+    // Draw Player Names
+    assContent += `Dialogue: 3,${startTime},${endTime},Broadcast,,0,0,0,,{\\pos(55,86)\\an7\\bord0\\shad0\\fnArial\\fs26\\b1\\c&HFCFAF8&}${player1}\n`
+    assContent += `Dialogue: 3,${startTime},${endTime},Broadcast,,0,0,0,,{\\pos(55,130)\\an7\\bord0\\shad0\\fnArial\\fs26\\b1\\c&HFCFAF8&}${player2}\n`
+
+    // --- COLUMN 1 RENDER ---
+    if (currentSet >= 2) {
+      // Render as Historical (Gray)
+      assContent += `Dialogue: 3,${startTime},${endTime},Broadcast,,0,0,0,,{\\pos(${col1X},86)\\an9\\bord0\\shad0\\fnArial\\fs24\\b1\\c&HB8A394&}${prevScores.s1p1}\n`
+      assContent += `Dialogue: 3,${startTime},${endTime},Broadcast,,0,0,0,,{\\pos(${col1X},130)\\an9\\bord0\\shad0\\fnArial\\fs24\\b1\\c&HB8A394&}${prevScores.s1p2}\n`
+    } else {
+      // Render as Live (Bright Sky Blue)
+      assContent += `Dialogue: 3,${startTime},${endTime},Broadcast,,0,0,0,,{\\pos(${col1X},84)\\an9\\bord0\\shad0\\fnArial\\fs30\\b1\\c&HF8BD38&}${item.p1Score}\n`
+      assContent += `Dialogue: 3,${startTime},${endTime},Broadcast,,0,0,0,,{\\pos(${col1X},128)\\an9\\bord0\\shad0\\fnArial\\fs30\\b1\\c&HF8BD38&}${item.p2Score}\n`
+    }
+
+    // --- COLUMN 2 RENDER ---
+    if (currentSet >= 2) {
+      if (currentSet === 3) {
+        // Render as Historical
+        assContent += `Dialogue: 3,${startTime},${endTime},Broadcast,,0,0,0,,{\\pos(${col2X},86)\\an9\\bord0\\shad0\\fnArial\\fs24\\b1\\c&HB8A394&}${prevScores.s2p1}\n`
+        assContent += `Dialogue: 3,${startTime},${endTime},Broadcast,,0,0,0,,{\\pos(${col2X},130)\\an9\\bord0\\shad0\\fnArial\\fs24\\b1\\c&HB8A394&}${prevScores.s2p2}\n`
+      } else {
+        // Render as Live
+        assContent += `Dialogue: 3,${startTime},${endTime},Broadcast,,0,0,0,,{\\pos(${col2X},84)\\an9\\bord0\\shad0\\fnArial\\fs30\\b1\\c&HF8BD38&}${item.p1Score}\n`
+        assContent += `Dialogue: 3,${startTime},${endTime},Broadcast,,0,0,0,,{\\pos(${col2X},128)\\an9\\bord0\\shad0\\fnArial\\fs30\\b1\\c&HF8BD38&}${item.p2Score}\n`
+      }
+    }
+
+    // --- COLUMN 3 RENDER ---
+    if (currentSet === 3) {
+      // Render as Live (Always live if Set 3 is active)
+      assContent += `Dialogue: 3,${startTime},${endTime},Broadcast,,0,0,0,,{\\pos(${col3X},84)\\an9\\bord0\\shad0\\fnArial\\fs30\\b1\\c&HF8BD38&}${item.p1Score}\n`
+      assContent += `Dialogue: 3,${startTime},${endTime},Broadcast,,0,0,0,,{\\pos(${col3X},128)\\an9\\bord0\\shad0\\fnArial\\fs30\\b1\\c&HF8BD38&}${item.p2Score}\n`
+    }
   }
 
   fs.writeFileSync(outputPath, assContent, 'utf8')
@@ -149,7 +181,18 @@ app.whenReady().then(() => {
     'video:export',
     async (
       event,
-      { videoPath, timeline, player1, player2, bgmPath, videoVolume, bgmVolume, denoiseVideo }
+      {
+        videoPath,
+        timeline,
+        player1,
+        player2,
+        currentSet,
+        prevScores,
+        bgmPath,
+        videoVolume,
+        bgmVolume,
+        denoiseVideo
+      }
     ) => {
       const { canceled, filePath: savePath } = await dialog.showSaveDialog({
         title: 'Export HD Video with Scorecard',
@@ -162,7 +205,7 @@ app.whenReady().then(() => {
         return { success: false, error: 'Cannot overwrite the input video file directly!' }
 
       const tempAssPath = join(savePath, '..', `temp_scoreboard_${Date.now()}.ass`)
-      createASSFile(timeline, player1, player2, tempAssPath)
+      createASSFile(timeline, player1, player2, currentSet, prevScores, tempAssPath)
       const escapedAssPath = tempAssPath.replace(/\\/g, '/').replace(/:/g, '\\:')
 
       const vVol = videoVolume !== undefined ? videoVolume / 100 : 1
@@ -176,12 +219,14 @@ app.whenReady().then(() => {
         let command = ffmpeg(videoPath)
 
         if (bgmPath) {
-          command = command.input(bgmPath)
+          // --- TWO AUDIO TRACKS (Mix Original + BGM) ---
+          command = command.input(bgmPath).inputOptions(['-stream_loop', '-1']) // <-- NEW: Loops the BGM infinitely!
           command = command
             .complexFilter([
               `[0:v]ass='${escapedAssPath}'[v]`,
               `[0:a]${originalAudioFilter}[a1]`,
               `[1:a]volume=${bVol}[a2]`,
+              // 'duration=first' automatically slices the infinite BGM loop exactly when the video ends!
               `[a1][a2]amix=inputs=2:duration=first:dropout_transition=2[a]`
             ])
             .outputOptions([

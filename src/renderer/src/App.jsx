@@ -8,13 +8,16 @@ function App() {
 
   // Match Setup State
   const [player1, setPlayer1] = useState('Dhiraj')
-  const [player2, setPlayer2] = useState('Lakshya')
+  const [player2, setPlayer2] = useState('Opponent')
+  // NEW: Dynamic Sets Logic
+  const [currentSet, setCurrentSet] = useState(1)
+  const [prevScores, setPrevScores] = useState({ s1p1: 21, s1p2: 14, s2p1: 21, s2p2: 19 })
 
   // Audio Mixer State
   const [bgmPath, setBgmPath] = useState(null)
   const [videoVolume, setVideoVolume] = useState(100)
   const [bgmVolume, setBgmVolume] = useState(30)
-  const [denoiseVideo, setDenoiseVideo] = useState(false) // NEW: Denoise State
+  const [denoiseVideo, setDenoiseVideo] = useState(false)
 
   // Timeline Ledger
   const [timeline, setTimeline] = useState([{ id: 'init', startTime: 0.0, p1Score: 0, p2Score: 0 }])
@@ -66,10 +69,12 @@ function App() {
         timeline: timeline,
         player1: player1,
         player2: player2,
+        currentSet: currentSet,
+        prevScores: prevScores,
         bgmPath: bgmPath,
         videoVolume: videoVolume,
         bgmVolume: bgmVolume,
-        denoiseVideo: denoiseVideo // NEW: Send to backend
+        denoiseVideo: denoiseVideo
       })
 
       if (result && result.success) {
@@ -295,7 +300,7 @@ function App() {
               alignItems: 'flex-start'
             }}
           >
-            {/* LEFT COLUMN */}
+            {/* LEFT COLUMN: Audio Mixer & Video Player */}
             <div
               style={{
                 flex: '1 1 60%',
@@ -305,59 +310,6 @@ function App() {
                 minWidth: '0'
               }}
             >
-              <div
-                style={{
-                  display: 'flex',
-                  gap: '20px',
-                  backgroundColor: '#2d2d2d',
-                  padding: '12px 20px',
-                  borderRadius: '8px',
-                  justifyContent: 'space-between'
-                }}
-              >
-                <div style={{ flex: 1 }}>
-                  <label style={{ fontSize: '0.85rem', color: '#aaa', marginRight: '8px' }}>
-                    Player 1:
-                  </label>
-                  <input
-                    type="text"
-                    disabled={isExporting}
-                    value={player1}
-                    onChange={(e) => setPlayer1(e.target.value)}
-                    style={{
-                      padding: '6px 10px',
-                      borderRadius: '4px',
-                      border: '1px solid #444',
-                      backgroundColor: '#1e1e1e',
-                      color: '#fff',
-                      fontWeight: 'bold',
-                      width: '60%'
-                    }}
-                  />
-                </div>
-                <div style={{ flex: 1, textAlign: 'right' }}>
-                  <label style={{ fontSize: '0.85rem', color: '#aaa', marginRight: '8px' }}>
-                    Player 2:
-                  </label>
-                  <input
-                    type="text"
-                    disabled={isExporting}
-                    value={player2}
-                    onChange={(e) => setPlayer2(e.target.value)}
-                    style={{
-                      padding: '6px 10px',
-                      borderRadius: '4px',
-                      border: '1px solid #444',
-                      backgroundColor: '#1e1e1e',
-                      color: '#fff',
-                      fontWeight: 'bold',
-                      width: '60%'
-                    }}
-                  />
-                </div>
-              </div>
-
-              {/* NEW AUDIO MIXER UI */}
               <div
                 style={{
                   backgroundColor: '#2d2d2d',
@@ -393,10 +345,8 @@ function App() {
                       value={videoVolume}
                       onChange={(e) => setVideoVolume(parseInt(e.target.value))}
                       disabled={isExporting}
-                      style={{ width: '100%', cursor: 'pointer' }}
+                      style={{ width: '100%', cursor: 'pointer', marginBottom: '8px' }}
                     />
-
-                    {/* NEW: Denoise Checkbox */}
                     <label
                       style={{
                         display: 'flex',
@@ -499,9 +449,220 @@ function App() {
                   player2={player2}
                   score1={activeScore.p1Score}
                   score2={activeScore.p2Score}
+                  currentSet={currentSet}
+                  prevScores={prevScores}
                 />
               </div>
+            </div>
 
+            {/* RIGHT COLUMN: Setup, Shortcuts, Buttons, and Ledger */}
+            <div
+              style={{
+                flex: '1 1 40%',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '15px',
+                maxHeight: 'calc(100vh - 100px)',
+                boxSizing: 'border-box'
+              }}
+            >
+              {/* Dynamic Setup Controls */}
+              <div
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '15px',
+                  backgroundColor: '#2d2d2d',
+                  padding: '15px 20px',
+                  borderRadius: '8px'
+                }}
+              >
+                <div style={{ display: 'flex', gap: '20px' }}>
+                  <div style={{ flex: 1 }}>
+                    <label style={{ fontSize: '0.85rem', color: '#aaa', marginRight: '8px' }}>
+                      Player 1:
+                    </label>
+                    <input
+                      type="text"
+                      disabled={isExporting}
+                      value={player1}
+                      onChange={(e) => setPlayer1(e.target.value)}
+                      style={{
+                        padding: '6px 10px',
+                        borderRadius: '4px',
+                        border: '1px solid #444',
+                        backgroundColor: '#1e1e1e',
+                        color: '#fff',
+                        fontWeight: 'bold',
+                        width: '100%',
+                        boxSizing: 'border-box'
+                      }}
+                    />
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <label style={{ fontSize: '0.85rem', color: '#aaa', marginRight: '8px' }}>
+                      Player 2:
+                    </label>
+                    <input
+                      type="text"
+                      disabled={isExporting}
+                      value={player2}
+                      onChange={(e) => setPlayer2(e.target.value)}
+                      style={{
+                        padding: '6px 10px',
+                        borderRadius: '4px',
+                        border: '1px solid #444',
+                        backgroundColor: '#1e1e1e',
+                        color: '#fff',
+                        fontWeight: 'bold',
+                        width: '100%',
+                        boxSizing: 'border-box'
+                      }}
+                    />
+                  </div>
+                </div>
+
+                <div
+                  style={{
+                    display: 'flex',
+                    gap: '15px',
+                    alignItems: 'center',
+                    backgroundColor: '#1f2937',
+                    padding: '10px 15px',
+                    borderRadius: '6px',
+                    flexWrap: 'wrap'
+                  }}
+                >
+                  <label style={{ fontSize: '0.9rem', color: '#38bdf8', fontWeight: 'bold' }}>
+                    Active Game:
+                  </label>
+                  <select
+                    disabled={isExporting}
+                    value={currentSet}
+                    onChange={(e) => setCurrentSet(parseInt(e.target.value))}
+                    style={{
+                      padding: '6px',
+                      borderRadius: '4px',
+                      backgroundColor: '#111',
+                      color: '#fff',
+                      border: '1px solid #555',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    <option value={1}>Set 1</option>
+                    <option value={2}>Set 2</option>
+                    <option value={3}>Set 3</option>
+                  </select>
+
+                  {currentSet >= 2 && (
+                    <div
+                      style={{
+                        display: 'flex',
+                        gap: '8px',
+                        alignItems: 'center',
+                        borderLeft: '1px solid #444',
+                        paddingLeft: '15px'
+                      }}
+                    >
+                      <label style={{ fontSize: '0.8rem', color: '#aaa' }}>Set 1 Result:</label>
+                      <input
+                        type="number"
+                        min="0"
+                        value={prevScores.s1p1}
+                        onChange={(e) =>
+                          setPrevScores((prev) => ({
+                            ...prev,
+                            s1p1: parseInt(e.target.value) || 0
+                          }))
+                        }
+                        style={{
+                          width: '40px',
+                          padding: '4px',
+                          borderRadius: '4px',
+                          backgroundColor: '#111',
+                          color: '#94a3b8',
+                          border: '1px solid #444'
+                        }}
+                      />
+                      <span style={{ color: '#666' }}>-</span>
+                      <input
+                        type="number"
+                        min="0"
+                        value={prevScores.s1p2}
+                        onChange={(e) =>
+                          setPrevScores((prev) => ({
+                            ...prev,
+                            s1p2: parseInt(e.target.value) || 0
+                          }))
+                        }
+                        style={{
+                          width: '40px',
+                          padding: '4px',
+                          borderRadius: '4px',
+                          backgroundColor: '#111',
+                          color: '#94a3b8',
+                          border: '1px solid #444'
+                        }}
+                      />
+                    </div>
+                  )}
+
+                  {currentSet === 3 && (
+                    <div
+                      style={{
+                        display: 'flex',
+                        gap: '8px',
+                        alignItems: 'center',
+                        borderLeft: '1px solid #444',
+                        paddingLeft: '15px'
+                      }}
+                    >
+                      <label style={{ fontSize: '0.8rem', color: '#aaa' }}>Set 2 Result:</label>
+                      <input
+                        type="number"
+                        min="0"
+                        value={prevScores.s2p1}
+                        onChange={(e) =>
+                          setPrevScores((prev) => ({
+                            ...prev,
+                            s2p1: parseInt(e.target.value) || 0
+                          }))
+                        }
+                        style={{
+                          width: '40px',
+                          padding: '4px',
+                          borderRadius: '4px',
+                          backgroundColor: '#111',
+                          color: '#94a3b8',
+                          border: '1px solid #444'
+                        }}
+                      />
+                      <span style={{ color: '#666' }}>-</span>
+                      <input
+                        type="number"
+                        min="0"
+                        value={prevScores.s2p2}
+                        onChange={(e) =>
+                          setPrevScores((prev) => ({
+                            ...prev,
+                            s2p2: parseInt(e.target.value) || 0
+                          }))
+                        }
+                        style={{
+                          width: '40px',
+                          padding: '4px',
+                          borderRadius: '4px',
+                          backgroundColor: '#111',
+                          color: '#94a3b8',
+                          border: '1px solid #444'
+                        }}
+                      />
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Speed Shortcuts */}
               <div
                 style={{
                   padding: '8px 15px',
@@ -518,6 +679,7 @@ function App() {
                 {player2 || 'Player 2'}
               </div>
 
+              {/* +1 Point Buttons */}
               <div
                 style={{
                   display: 'flex',
@@ -544,7 +706,7 @@ function App() {
                     flex: 1
                   }}
                 >
-                  +1 {player1 || 'Player 1'} (Key: 1)
+                  +1 {player1 || 'Player 1'}
                 </button>
                 <span style={{ color: '#aaa', fontSize: '0.9rem', whiteSpace: 'nowrap' }}>
                   At {formatTime(currentTime)}
@@ -564,139 +726,139 @@ function App() {
                     flex: 1
                   }}
                 >
-                  +1 {player2 || 'Player 2'} (Key: 2)
+                  +1 {player2 || 'Player 2'}
                 </button>
               </div>
-            </div>
 
-            {/* RIGHT COLUMN */}
-            <div
-              style={{
-                flex: '1 1 40%',
-                backgroundColor: '#2d2d2d',
-                borderRadius: '8px',
-                padding: '15px',
-                border: '1px solid #444',
-                maxHeight: 'calc(100vh - 100px)',
-                overflowY: 'auto',
-                boxSizing: 'border-box'
-              }}
-            >
+              {/* Score Timeline Ledger */}
               <div
                 style={{
-                  position: 'sticky',
-                  top: '-15px',
+                  flex: 1,
                   backgroundColor: '#2d2d2d',
-                  paddingBottom: '10px',
-                  paddingTop: '5px',
-                  zIndex: 5,
-                  borderBottom: '1px solid #444'
+                  borderRadius: '8px',
+                  padding: '15px',
+                  border: '1px solid #444',
+                  overflowY: 'auto'
                 }}
               >
-                <h3 style={{ margin: 0, fontSize: '1.1rem', color: '#38bdf8' }}>
-                  📊 Score Timeline Ledger
-                </h3>
-                <p style={{ margin: '4px 0 0 0', fontSize: '0.8rem', color: '#aaa' }}>
-                  Directly edit seconds to adjust overlay timing.
-                </p>
-              </div>
+                <div
+                  style={{
+                    position: 'sticky',
+                    top: '-15px',
+                    backgroundColor: '#2d2d2d',
+                    paddingBottom: '10px',
+                    paddingTop: '5px',
+                    zIndex: 5,
+                    borderBottom: '1px solid #444'
+                  }}
+                >
+                  <h3 style={{ margin: 0, fontSize: '1.1rem', color: '#38bdf8' }}>
+                    📊 Score Timeline Ledger
+                  </h3>
+                  <p style={{ margin: '4px 0 0 0', fontSize: '0.8rem', color: '#aaa' }}>
+                    Directly edit seconds to adjust overlay timing.
+                  </p>
+                </div>
 
-              <table
-                style={{
-                  width: '100%',
-                  borderCollapse: 'collapse',
-                  textAlign: 'left',
-                  fontSize: '0.9rem',
-                  marginTop: '10px'
-                }}
-              >
-                <thead>
-                  <tr style={{ borderBottom: '1px solid #555', color: '#aaa' }}>
-                    <th style={{ padding: '8px 4px' }}>Time (Sec)</th>
-                    <th style={{ padding: '8px 4px' }}>{player1}</th>
-                    <th style={{ padding: '8px 4px' }}>{player2}</th>
-                    <th style={{ padding: '8px 4px', textAlign: 'right' }}>Action</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {timeline.map((item) => (
-                    <tr
-                      key={item.id}
-                      style={{
-                        borderBottom: '1px solid #333',
-                        backgroundColor:
-                          item.id === activeScore.id ? 'rgba(56, 189, 248, 0.15)' : 'transparent',
-                        transition: 'background-color 0.2s'
-                      }}
-                    >
-                      <td style={{ padding: '8px 4px', fontWeight: 'bold' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                          <input
-                            type="number"
-                            step="0.1"
-                            min="0"
-                            disabled={isExporting || item.id === 'init'}
-                            value={item.startTime}
-                            onChange={(e) => handleTimeChange(item.id, parseFloat(e.target.value))}
-                            style={{
-                              width: '65px',
-                              padding: '4px 6px',
-                              borderRadius: '4px',
-                              border: '1px solid #555',
-                              backgroundColor: '#111',
-                              color: '#38bdf8',
-                              fontWeight: 'bold'
-                            }}
-                          />
-                          <span style={{ fontSize: '0.75rem', color: '#888' }}>
-                            ({formatTime(item.startTime)})
-                          </span>
-                        </div>
-                      </td>
-                      <td
-                        style={{
-                          padding: '8px 4px',
-                          color: '#38bdf8',
-                          fontWeight: 'bold',
-                          fontSize: '1rem'
-                        }}
-                      >
-                        {item.p1Score}
-                      </td>
-                      <td
-                        style={{
-                          padding: '8px 4px',
-                          color: '#38bdf8',
-                          fontWeight: 'bold',
-                          fontSize: '1rem'
-                        }}
-                      >
-                        {item.p2Score}
-                      </td>
-                      <td style={{ padding: '8px 4px', textAlign: 'right' }}>
-                        {item.id !== 'init' && (
-                          <button
-                            onClick={() => handleDeletePoint(item.id)}
-                            disabled={isExporting}
-                            style={{
-                              padding: '4px 8px',
-                              backgroundColor: '#ef4444',
-                              color: 'white',
-                              border: 'none',
-                              borderRadius: '4px',
-                              cursor: isExporting ? 'not-allowed' : 'pointer',
-                              fontSize: '0.75rem',
-                              fontWeight: 'bold'
-                            }}
-                          >
-                            Delete
-                          </button>
-                        )}
-                      </td>
+                <table
+                  style={{
+                    width: '100%',
+                    borderCollapse: 'collapse',
+                    textAlign: 'left',
+                    fontSize: '0.9rem',
+                    marginTop: '10px'
+                  }}
+                >
+                  <thead>
+                    <tr style={{ borderBottom: '1px solid #555', color: '#aaa' }}>
+                      <th style={{ padding: '8px 4px' }}>Time (Sec)</th>
+                      <th style={{ padding: '8px 4px' }}>{player1}</th>
+                      <th style={{ padding: '8px 4px' }}>{player2}</th>
+                      <th style={{ padding: '8px 4px', textAlign: 'right' }}>Action</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {timeline.map((item) => (
+                      <tr
+                        key={item.id}
+                        style={{
+                          borderBottom: '1px solid #333',
+                          backgroundColor:
+                            item.id === activeScore.id ? 'rgba(56, 189, 248, 0.15)' : 'transparent',
+                          transition: 'background-color 0.2s'
+                        }}
+                      >
+                        <td style={{ padding: '8px 4px', fontWeight: 'bold' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <input
+                              type="number"
+                              step="0.1"
+                              min="0"
+                              disabled={isExporting || item.id === 'init'}
+                              value={item.startTime}
+                              onChange={(e) =>
+                                handleTimeChange(item.id, parseFloat(e.target.value))
+                              }
+                              style={{
+                                width: '65px',
+                                padding: '4px 6px',
+                                borderRadius: '4px',
+                                border: '1px solid #555',
+                                backgroundColor: '#111',
+                                color: '#38bdf8',
+                                fontWeight: 'bold'
+                              }}
+                            />
+                            <span style={{ fontSize: '0.75rem', color: '#888' }}>
+                              ({formatTime(item.startTime)})
+                            </span>
+                          </div>
+                        </td>
+                        <td
+                          style={{
+                            padding: '8px 4px',
+                            color: '#38bdf8',
+                            fontWeight: 'bold',
+                            fontSize: '1rem'
+                          }}
+                        >
+                          {item.p1Score}
+                        </td>
+                        <td
+                          style={{
+                            padding: '8px 4px',
+                            color: '#38bdf8',
+                            fontWeight: 'bold',
+                            fontSize: '1rem'
+                          }}
+                        >
+                          {item.p2Score}
+                        </td>
+                        <td style={{ padding: '8px 4px', textAlign: 'right' }}>
+                          {item.id !== 'init' && (
+                            <button
+                              onClick={() => handleDeletePoint(item.id)}
+                              disabled={isExporting}
+                              style={{
+                                padding: '4px 8px',
+                                backgroundColor: '#ef4444',
+                                color: 'white',
+                                border: 'none',
+                                borderRadius: '4px',
+                                cursor: isExporting ? 'not-allowed' : 'pointer',
+                                fontSize: '0.75rem',
+                                fontWeight: 'bold'
+                              }}
+                            >
+                              Delete
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
         ) : (
