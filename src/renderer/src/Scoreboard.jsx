@@ -1,6 +1,6 @@
 import React from 'react'
 
-function Scoreboard({ player1, player2, score1, score2, currentSet = 1, prevScores }) {
+function Scoreboard({ matchType = 'Singles', player1, player2, score1, score2, currentSet = 1, prevScores }) {
   // Helper to render individual score boxes
   const ScoreColumn = ({ score, isActive }) => (
     <span
@@ -19,6 +19,8 @@ function Scoreboard({ player1, player2, score1, score2, currentSet = 1, prevScor
       {score}
     </span>
   )
+
+  const displayType = matchType ? matchType.toUpperCase() : 'SINGLES'
 
   return (
     <div
@@ -50,7 +52,7 @@ function Scoreboard({ player1, player2, score1, score2, currentSet = 1, prevScor
           color: '#fff'
         }}
       >
-        🏸 Singles Match
+        🏸 {displayType} MATCH
       </div>
 
       {/* Player 1 Row */}

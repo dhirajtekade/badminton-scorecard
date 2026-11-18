@@ -6,18 +6,15 @@ import fs from 'fs'
 import ffmpeg from 'fluent-ffmpeg'
 import ffmpegStatic from 'ffmpeg-static'
 
-// --- 100% FOOLPROOF FFMPEG BINARY FINDER ---
 // --- 100% FOOLPROOF FFMPEG BINARY FINDER (ASAR-AWARE) ---
 function getFFmpegPath() {
   const rawPath = ffmpegStatic.default || ffmpegStatic
   let ffmpegPath = rawPath
 
-  // 1. Production Fix: Force the path out of the compressed 'app.asar' archive
   if (ffmpegPath && ffmpegPath.includes('app.asar')) {
     ffmpegPath = ffmpegPath.replace('app.asar', 'app.asar.unpacked')
   }
 
-  // 2. Dev Mode Fallback
   if (!fs.existsSync(ffmpegPath)) {
     const exeName = process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg'
     ffmpegPath = join(process.cwd(), 'node_modules', 'ffmpeg-static', exeName)
@@ -31,7 +28,28 @@ const resolvedFFmpegPath = getFFmpegPath()
 ffmpeg.setFfmpegPath(resolvedFFmpegPath)
 // --------------------------------------------------------
 
-// Helper: Convert seconds to ASS subtitle timestamp format (0:01:05.40)
+function timeStringToSeconds(timemark) {
+  if (!timemark || typeof timemark !== 'string') return 0
+  const parts = timemark.split(':')
+  if (parts.length < 3) return 0
+  const hours = parseFloat(parts[0]) || 0
+  const minutes = parseFloat(parts[1]) || 0
+  const seconds = parseFloat(parts[2]) || 0
+  return hours * 3600 + minutes * 60 + seconds
+}
+
+function getVideoDuration(filePath) {
+  return new Promise((resolve) => {
+    ffmpeg.ffprobe(filePath, (err, metadata) => {
+      if (err || !metadata || !metadata.format || !metadata.format.duration) {
+        resolve(0)
+      } else {
+        resolve(parseFloat(metadata.format.duration))
+      }
+    })
+  })
+}
+
 function formatASSTime(seconds) {
   const hrs = Math.floor(seconds / 3600)
   const mins = Math.floor((seconds % 3600) / 60)
@@ -40,75 +58,84 @@ function formatASSTime(seconds) {
   return `${hrs}:${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}.${String(cs).padStart(2, '0')}`
 }
 
-// --- BROADCAST-GRADE VECTOR SCOREBOARD GENERATOR ---
 // --- BROADCAST-GRADE DYNAMIC SCOREBOARD GENERATOR ---
-function createASSFile(timeline, player1, player2, currentSet, prevScores, outputPath) {
+
+// --- BROADCAST-GRADE DYNAMIC SCOREBOARD GENERATOR ---
+function createASSFile(timeline, matchType, player1, player2, uiCurrentSet, prevScores, outputPath) {
   let assContent = `[Script Info]
-ScriptType: v4.00+
-PlayResX: 1920
-PlayResY: 1080
-WrapStyle: 0
+                    ScriptType: v4.00+
+                    PlayResX: 1920
+                    PlayResY: 1080
+                    WrapStyle: 0
 
-[V4+ Styles]
-Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Broadcast,Arial,26,&H00FFFFFF,&H000000FF,&H00000000,&H00000000,-1,0,0,0,100,100,0,0,1,0,0,7,0,0,0,1
+                    [V4+ Styles]
+                    Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+                    Style: Broadcast,Arial,26,&H00FFFFFF,&H000000FF,&H00000000,&H00000000,-1,0,0,0,100,100,0,0,1,0,0,7,0,0,0,1
 
-[Events]
-Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
-`
+                    [Events]
+                    Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+                    `
 
-  // Dynamic Card Width: 260px (Names) + 60px per column
+  // If the timeline contains Set reset markers, start at Set 1 and grow automatically.
+  // If it's a single-set video with no markers, use whatever the UI dropdown says.
+  const hasMarkers = timeline.some((t) => t.id && t.id.startsWith('set_'))
+  let activeSet = hasMarkers ? 1 : uiCurrentSet
+
   const baseWidth = 260
   const columnWidth = 60
-  const totalWidth = baseWidth + currentSet * columnWidth
-
-  // Right-aligned column coordinates
-  const col1X = 295
-  const col2X = col1X + columnWidth
-  const col3X = col2X + columnWidth
 
   for (let i = 0; i < timeline.length; i++) {
     const item = timeline[i]
     const startTime = formatASSTime(item.startTime)
     const endTime = timeline[i + 1] ? formatASSTime(timeline[i + 1].startTime) : '99:59:59.99'
 
+    // If we cross a new set marker in the timeline, expand the scoreboard!
+    if (item.id && item.id.startsWith('set_')) {
+      const match = item.id.match(/set_(\d)_start/)
+      if (match) activeSet = parseInt(match[1])
+    }
+
+    // Dynamic dimensions for THIS specific time interval
+    const totalWidth = baseWidth + activeSet * columnWidth
+    const col1X = 295
+    const col2X = col1X + columnWidth
+    const col3X = col2X + columnWidth
+
     // Draw the expandable background cards
     assContent += `Dialogue: 0,${startTime},${endTime},Broadcast,,0,0,0,,{\\pos(44,44)\\an7\\bord0\\shad0\\c&H000000&\\1a&H80&\\p1}m 0 0 l ${totalWidth} 0 l ${totalWidth} 145 l 0 145{\\p0}\n`
     assContent += `Dialogue: 1,${startTime},${endTime},Broadcast,,0,0,0,,{\\pos(40,40)\\an7\\bord0\\shad0\\c&H2A170F&\\1a&H26&\\p1}m 0 0 l ${totalWidth} 0 l ${totalWidth} 145 l 0 145{\\p0}\n`
     assContent += `Dialogue: 2,${startTime},${endTime},Broadcast,,0,0,0,,{\\pos(40,40)\\an7\\bord0\\shad0\\c&HC78402&\\1a&H00&\\p1}m 0 0 l ${totalWidth} 0 l ${totalWidth} 36 l 0 36{\\p0}\n`
-    assContent += `Dialogue: 3,${startTime},${endTime},Broadcast,,0,0,0,,{\\pos(55,47)\\an7\\bord0\\shad0\\fnArial\\fs20\\b1\\c&HFFFFFF&}🏸 SINGLES MATCH\n`
+    
+    const displayMatchType = matchType ? matchType.toUpperCase() : 'SINGLES'
+    
+    assContent += `Dialogue: 3,${startTime},${endTime},Broadcast,,0,0,0,,{\\pos(55,47)\\an7\\bord0\\shad0\\fnArial\\fs20\\b1\\c&HFFFFFF&}🏸 ${displayMatchType} MATCH\n`
 
     // Draw Player Names
     assContent += `Dialogue: 3,${startTime},${endTime},Broadcast,,0,0,0,,{\\pos(55,86)\\an7\\bord0\\shad0\\fnArial\\fs26\\b1\\c&HFCFAF8&}${player1}\n`
     assContent += `Dialogue: 3,${startTime},${endTime},Broadcast,,0,0,0,,{\\pos(55,130)\\an7\\bord0\\shad0\\fnArial\\fs26\\b1\\c&HFCFAF8&}${player2}\n`
 
     // --- COLUMN 1 RENDER ---
-    if (currentSet >= 2) {
-      // Render as Historical (Gray)
+    if (activeSet >= 2) {
       assContent += `Dialogue: 3,${startTime},${endTime},Broadcast,,0,0,0,,{\\pos(${col1X},86)\\an9\\bord0\\shad0\\fnArial\\fs24\\b1\\c&HB8A394&}${prevScores.s1p1}\n`
       assContent += `Dialogue: 3,${startTime},${endTime},Broadcast,,0,0,0,,{\\pos(${col1X},130)\\an9\\bord0\\shad0\\fnArial\\fs24\\b1\\c&HB8A394&}${prevScores.s1p2}\n`
     } else {
-      // Render as Live (Bright Sky Blue)
       assContent += `Dialogue: 3,${startTime},${endTime},Broadcast,,0,0,0,,{\\pos(${col1X},84)\\an9\\bord0\\shad0\\fnArial\\fs30\\b1\\c&HF8BD38&}${item.p1Score}\n`
       assContent += `Dialogue: 3,${startTime},${endTime},Broadcast,,0,0,0,,{\\pos(${col1X},128)\\an9\\bord0\\shad0\\fnArial\\fs30\\b1\\c&HF8BD38&}${item.p2Score}\n`
     }
 
     // --- COLUMN 2 RENDER ---
-    if (currentSet >= 2) {
-      if (currentSet === 3) {
-        // Render as Historical
+    if (activeSet >= 2) {
+      if (activeSet === 3) {
         assContent += `Dialogue: 3,${startTime},${endTime},Broadcast,,0,0,0,,{\\pos(${col2X},86)\\an9\\bord0\\shad0\\fnArial\\fs24\\b1\\c&HB8A394&}${prevScores.s2p1}\n`
         assContent += `Dialogue: 3,${startTime},${endTime},Broadcast,,0,0,0,,{\\pos(${col2X},130)\\an9\\bord0\\shad0\\fnArial\\fs24\\b1\\c&HB8A394&}${prevScores.s2p2}\n`
       } else {
-        // Render as Live
         assContent += `Dialogue: 3,${startTime},${endTime},Broadcast,,0,0,0,,{\\pos(${col2X},84)\\an9\\bord0\\shad0\\fnArial\\fs30\\b1\\c&HF8BD38&}${item.p1Score}\n`
         assContent += `Dialogue: 3,${startTime},${endTime},Broadcast,,0,0,0,,{\\pos(${col2X},128)\\an9\\bord0\\shad0\\fnArial\\fs30\\b1\\c&HF8BD38&}${item.p2Score}\n`
       }
     }
 
     // --- COLUMN 3 RENDER ---
-    if (currentSet === 3) {
-      // Render as Live (Always live if Set 3 is active)
+    if (activeSet === 3) {
       assContent += `Dialogue: 3,${startTime},${endTime},Broadcast,,0,0,0,,{\\pos(${col3X},84)\\an9\\bord0\\shad0\\fnArial\\fs30\\b1\\c&HF8BD38&}${item.p1Score}\n`
       assContent += `Dialogue: 3,${startTime},${endTime},Broadcast,,0,0,0,,{\\pos(${col3X},128)\\an9\\bord0\\shad0\\fnArial\\fs30\\b1\\c&HF8BD38&}${item.p2Score}\n`
     }
@@ -116,7 +143,46 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 
   fs.writeFileSync(outputPath, assContent, 'utf8')
 }
-// -----------------------------------------------------
+
+// --- BUMPER / TITLE CARD CLIP GENERATOR ---
+function createTitleCardClip(text, outputPath) {
+  const tempAss = outputPath.replace('.mp4', '.ass')
+  const escapedAss = tempAss.replace(/\\/g, '/').replace(/:/g, '\\:')
+
+  const assData = `[Script Info]
+ScriptType: v4.00+
+PlayResX: 1920
+PlayResY: 1080
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Title,Arial,56,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,2,0,5,0,0,0,1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+Dialogue: 0,0:00:00.00,0:00:02.50,Title,,0,0,0,,{\\pos(960,540)\\an5\\c&H38BDF8&\\b1}${text}
+`
+  fs.writeFileSync(tempAss, assData, 'utf8')
+
+  return new Promise((resolve, reject) => {
+    ffmpeg()
+      .input('color=c=0x0f172a:s=1920x1080:d=2.5')
+      .inputOption('-f lavfi')
+      .input('anullsrc=channel_layout=stereo:sample_rate=48000')
+      .inputOption('-f lavfi')
+      .videoFilters(`ass='${escapedAss}'`)
+      .outputOptions(['-c:v libx264', '-t 2.5', '-pix_fmt yuv420p', '-c:a aac', '-b:a 192k', '-y'])
+      .save(outputPath)
+      .on('end', () => {
+        if (fs.existsSync(tempAss)) fs.unlinkSync(tempAss)
+        resolve(outputPath)
+      })
+      .on('error', (err) => {
+        if (fs.existsSync(tempAss)) fs.unlinkSync(tempAss)
+        reject(err)
+      })
+  })
+}
 
 function createWindow() {
   const mainWindow = new BrowserWindow({
@@ -166,7 +232,6 @@ app.whenReady().then(() => {
     }
   })
 
-  // --- NEW: Select Multiple Videos ---
   ipcMain.handle('dialog:openMultipleFiles', async () => {
     const { canceled, filePaths } = await dialog.showOpenDialog({
       properties: ['openFile', 'multiSelections'],
@@ -177,8 +242,7 @@ app.whenReady().then(() => {
     return filePaths
   })
 
-  // --- NEW: Merge Videos via FFmpeg ---
-  ipcMain.handle('video:merge', async (event, { filePaths }) => {
+  ipcMain.handle('video:mergeWithTransitions', async (event, { filePaths, transitions = {} }) => {
     const { canceled, filePath: savePath } = await dialog.showSaveDialog({
       title: 'Save Merged Video',
       defaultPath: 'merged_match.mp4',
@@ -187,29 +251,61 @@ app.whenReady().then(() => {
 
     if (canceled || !savePath) return { success: false, canceled: true }
 
-    return new Promise((resolve) => {
-      let command = ffmpeg()
+    const tempDir = app.getPath('temp')
+    const generatedClips = []
+    const concatManifestList = []
 
-      // Load all selected videos into FFmpeg
-      filePaths.forEach((file) => {
-        command = command.input(file)
-      })
+    try {
+      for (let i = 0; i < filePaths.length; i++) {
+        if (i > 0) {
+          const titleText = transitions[i] || `SET ${i + 1}`
+          const clipPath = join(tempDir, `bumper_set_${i + 1}_${Date.now()}.mp4`)
+          await createTitleCardClip(titleText, clipPath)
+          generatedClips.push(clipPath)
+          concatManifestList.push(clipPath)
+        }
+        concatManifestList.push(filePaths[i])
+      }
 
-      command
-        .on('start', (commandLine) => console.log('🚀 Merging videos:', commandLine))
-        .on('progress', (progress) => {
-          event.sender.send('export:progress', {
-            percent:
-              progress.percent && !isNaN(progress.percent) ? Math.round(progress.percent) : 0,
-            timemark: progress.timemark || '00:00:00',
-            fps: progress.currentFps ? Math.round(progress.currentFps) : 0
+      const manifestPath = join(tempDir, `concat_manifest_${Date.now()}.txt`)
+      const manifestContent = concatManifestList
+        .map((p) => `file '${p.replace(/\\/g, '/')}'`)
+        .join('\n')
+      fs.writeFileSync(manifestPath, manifestContent, 'utf8')
+
+      return await new Promise((resolve) => {
+        ffmpeg()
+          .input(manifestPath)
+          .inputOptions(['-f concat', '-safe 0'])
+          .outputOptions(['-c copy', '-y'])
+          .save(savePath)
+          .on('start', (commandLine) => console.log('🚀 Running Concat:', commandLine))
+          .on('progress', (progress) => {
+            event.sender.send('export:progress', {
+              percent:
+                progress.percent && !isNaN(progress.percent) ? Math.round(progress.percent) : 0,
+              timemark: progress.timemark || '00:00:00',
+              fps: progress.currentFps ? Math.round(progress.currentFps) : 0
+            })
           })
-        })
-        .on('end', () => resolve({ success: true, savePath }))
-        .on('error', (err) => resolve({ success: false, error: err.message }))
-        // Merge to the target path using the OS temp folder for intermediate processing
-        .mergeToFile(savePath, app.getPath('temp'))
-    })
+          .on('end', () => {
+            if (fs.existsSync(manifestPath)) fs.unlinkSync(manifestPath)
+            generatedClips.forEach((c) => {
+              if (fs.existsSync(c)) fs.unlinkSync(c)
+            })
+            resolve({ success: true, savePath })
+          })
+          .on('error', (err) => {
+            if (fs.existsSync(manifestPath)) fs.unlinkSync(manifestPath)
+            generatedClips.forEach((c) => {
+              if (fs.existsSync(c)) fs.unlinkSync(c)
+            })
+            resolve({ success: false, error: err.message })
+          })
+      })
+    } catch (err) {
+      return { success: false, error: err.message }
+    }
   })
 
   ipcMain.handle('dialog:openAudio', async () => {
@@ -221,9 +317,6 @@ app.whenReady().then(() => {
     return filePaths[0]
   })
 
-  // Phase 3: HD Video Export with ASS Burn-In
-  // Phase 4: HD Video Export with ASS Burn-In & Audio Mixing
-  // Phase 4: HD Video Export with ASS Burn-In, Audio Mixing, and Denoise!
   ipcMain.handle(
     'video:export',
     async (
@@ -231,6 +324,7 @@ app.whenReady().then(() => {
       {
         videoPath,
         timeline,
+        matchType,
         player1,
         player2,
         currentSet,
@@ -238,7 +332,8 @@ app.whenReady().then(() => {
         bgmPath,
         videoVolume,
         bgmVolume,
-        denoiseVideo
+        denoiseVideo,
+        brightness
       }
     ) => {
       const { canceled, filePath: savePath } = await dialog.showSaveDialog({
@@ -252,28 +347,37 @@ app.whenReady().then(() => {
         return { success: false, error: 'Cannot overwrite the input video file directly!' }
 
       const tempAssPath = join(savePath, '..', `temp_scoreboard_${Date.now()}.ass`)
-      createASSFile(timeline, player1, player2, currentSet, prevScores, tempAssPath)
-      const escapedAssPath = tempAssPath.replace(/\\/g, '/').replace(/:/g, '\\:')
+      createASSFile(timeline, matchType, player1, player2, currentSet, prevScores, tempAssPath)
+
+      // HARDENED ESCAPING: Replaces backslashes, colons, AND single quotes to prevent breaking the filter
+      const escapedAssPath = tempAssPath
+        .replace(/\\/g, '/')
+        .replace(/:/g, '\\:')
+        .replace(/'/g, "\\'")
 
       const vVol = videoVolume !== undefined ? videoVolume / 100 : 1
       const bVol = bgmVolume !== undefined ? bgmVolume / 100 : 0.5
-
-      // Set up the video audio filter chain (Apply Denoise BEFORE Volume if requested)
-      // nf=-25 drops the noise floor by 25dB (perfect for exhaust fans) without making voices sound like robots
       const originalAudioFilter = denoiseVideo ? `afftdn=nf=-25,volume=${vVol}` : `volume=${vVol}`
+
+      const totalDuration = await getVideoDuration(videoPath)
 
       return new Promise((resolve) => {
         let command = ffmpeg(videoPath)
 
+        const boostRatio = brightness && brightness > 100 ? (brightness - 100) / 100 : 0
+        const ffmpegBrightness = (boostRatio * 0.5).toFixed(3)
+        const ffmpegContrast = (1 + boostRatio * 0.15).toFixed(3)
+        const eqFilter =
+          boostRatio > 0 ? `eq=brightness=${ffmpegBrightness}:contrast=${ffmpegContrast},` : ''
+
         if (bgmPath) {
-          // --- TWO AUDIO TRACKS (Mix Original + BGM) ---
-          command = command.input(bgmPath).inputOptions(['-stream_loop', '-1']) // <-- NEW: Loops the BGM infinitely!
+          command = command.input(bgmPath).inputOptions(['-stream_loop', '-1'])
           command = command
             .complexFilter([
-              `[0:v]ass='${escapedAssPath}'[v]`,
+              // ONE video input mapping to [v] that contains both brightness AND the scorecard
+              `[0:v]${eqFilter}ass='${escapedAssPath}'[v]`,
               `[0:a]${originalAudioFilter}[a1]`,
               `[1:a]volume=${bVol}[a2]`,
-              // 'duration=first' automatically slices the infinite BGM loop exactly when the video ends!
               `[a1][a2]amix=inputs=2:duration=first:dropout_transition=2[a]`
             ])
             .outputOptions([
@@ -289,7 +393,7 @@ app.whenReady().then(() => {
             ])
         } else {
           command = command
-            .videoFilters(`ass='${escapedAssPath}'`)
+            .videoFilters(`${eqFilter}ass='${escapedAssPath}'`)
             .audioFilters(originalAudioFilter)
             .outputOptions([
               '-c:v libx264',
@@ -306,9 +410,17 @@ app.whenReady().then(() => {
           .save(savePath)
           .on('start', (commandLine) => console.log('🚀 Running FFmpeg command:', commandLine))
           .on('progress', (progress) => {
+            const currentSeconds = timeStringToSeconds(progress.timemark)
+            let calculatedPercent = 0
+
+            if (totalDuration > 0 && currentSeconds > 0) {
+              calculatedPercent = Math.min(99, Math.round((currentSeconds / totalDuration) * 100))
+            } else if (progress.percent && !isNaN(progress.percent)) {
+              calculatedPercent = Math.round(progress.percent)
+            }
+
             event.sender.send('export:progress', {
-              percent:
-                progress.percent && !isNaN(progress.percent) ? Math.round(progress.percent) : 0,
+              percent: calculatedPercent,
               timemark: progress.timemark || '00:00:00',
               fps: progress.currentFps ? Math.round(progress.currentFps) : 0
             })

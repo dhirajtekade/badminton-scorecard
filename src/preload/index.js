@@ -10,7 +10,7 @@ const api = {
 
   // NEW: Multi-file selection and merge bridge
   selectMultipleVideos: () => ipcRenderer.invoke('dialog:openMultipleFiles'),
-  mergeVideos: (data) => ipcRenderer.invoke('video:merge', data),
+  mergeVideosWithTransitions: (data) => ipcRenderer.invoke('video:mergeWithTransitions', data),
   
   exportVideo: (data) => ipcRenderer.invoke('video:export', data),
   onExportProgress: (callback) => {

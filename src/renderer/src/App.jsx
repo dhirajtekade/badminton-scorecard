@@ -9,7 +9,7 @@ function App() {
   // Match Setup State
   const [player1, setPlayer1] = useState('Dhiraj')
   const [player2, setPlayer2] = useState('Opponent')
-  // NEW: Dynamic Sets Logic
+  // Dynamic Sets Logic
   const [currentSet, setCurrentSet] = useState(1)
   const [prevScores, setPrevScores] = useState({ s1p1: 21, s1p2: 14, s2p1: 21, s2p2: 19 })
 
@@ -25,6 +25,10 @@ function App() {
   // Export State
   const [isExporting, setIsExporting] = useState(false)
   const [exportStats, setExportStats] = useState({ percent: 0, timemark: '00:00:00', fps: 0 })
+
+  const [brightness, setBrightness] = useState(100)
+
+  const [matchType, setMatchType] = useState('Singles') // 'Singles' or 'Doubles'
 
   useEffect(() => {
     if (!window.api || !window.api.onExportProgress) return
@@ -60,9 +64,7 @@ function App() {
   const handleMergeVideos = async () => {
     if (isExporting || !window.api.selectMultipleVideos) return
     const files = await window.api.selectMultipleVideos()
-
-    if (!files) return
-    if (files.length < 2) {
+    if (!files || files.length < 2) {
       alert('Please select at least 2 videos to merge.')
       return
     }
@@ -71,9 +73,18 @@ function App() {
     setExportStats({ percent: 0, timemark: '00:00:00', fps: 0 })
 
     try {
-      const result = await window.api.mergeVideos({ filePaths: files })
+      const transitions = {
+        1: 'SET 2',
+        2: 'DECIDING SET 3'
+      }
+
+      const result = await window.api.mergeVideosWithTransitions({
+        filePaths: files,
+        transitions: transitions
+      })
+
       if (result && result.success) {
-        alert(`🎉 Videos merged successfully!\nSaved to: ${result.savePath}`)
+        alert(`🎉 Videos merged successfully with bumper cards!\nSaved to: ${result.savePath}`)
       } else if (result && !result.canceled) {
         alert(`❌ Merge failed: ${result.error || 'Unknown error'}`)
       }
@@ -96,6 +107,7 @@ function App() {
       const result = await window.api.exportVideo({
         videoPath: videoData.absolutePath,
         timeline: timeline,
+        matchType: matchType,
         player1: player1,
         player2: player2,
         currentSet: currentSet,
@@ -103,7 +115,8 @@ function App() {
         bgmPath: bgmPath,
         videoVolume: videoVolume,
         bgmVolume: bgmVolume,
-        denoiseVideo: denoiseVideo
+        denoiseVideo: denoiseVideo,
+        brightness: brightness
       })
 
       if (result && result.success) {
@@ -126,6 +139,24 @@ function App() {
   }
 
   const activeScore = getActiveScore()
+
+  // NEW: Determine the active set for the live preview based on video time
+  const getDynamicCurrentSet = () => {
+    const hasMarkers = timeline.some((t) => t.id && t.id.startsWith('set_'))
+    if (!hasMarkers) return currentSet
+
+    let active = 1
+    const validIntervals = timeline.filter((item) => item.startTime <= currentTime)
+    validIntervals.forEach((item) => {
+      if (item.id && item.id.startsWith('set_')) {
+        const match = item.id.match(/set_(\d)_start/)
+        if (match) active = parseInt(match[1])
+      }
+    })
+    return active
+  }
+
+  const dynamicSetForPreview = getDynamicCurrentSet()
 
   const handleAddPoint = (playerIndex) => {
     if (!videoRef.current || isExporting) return
@@ -153,6 +184,43 @@ function App() {
         .map((item) => (item.id === id ? { ...item, startTime: newTime } : item))
         .sort((a, b) => a.startTime - b.startTime)
     )
+  }
+
+  // --- NEW: Reset Score to 0-0 at Current Timestamp ---
+  const handleResetScoreAtCurrentTime = () => {
+    const roundedTime = parseFloat(currentTime.toFixed(1))
+
+    // Find the score right before this timestamp to auto-fill the previous set result
+    const lastScore = timeline.filter((entry) => entry.startTime < roundedTime).pop()
+
+    if (lastScore) {
+      if (currentSet === 2) {
+        setPrevScores((prev) => ({
+          ...prev,
+          s1p1: lastScore.p1Score,
+          s1p2: lastScore.p2Score
+        }))
+      } else if (currentSet === 3) {
+        setPrevScores((prev) => ({
+          ...prev,
+          s2p1: lastScore.p1Score,
+          s2p2: lastScore.p2Score
+        }))
+      }
+    }
+
+    // Insert a clean 0-0 reset point into the timeline
+    const resetEntry = {
+      id: `set_${currentSet}_start_${Date.now()}`,
+      startTime: roundedTime,
+      p1Score: 0,
+      p2Score: 0
+    }
+
+    // Remove any entries accidentally created after this timestamp and append 0-0
+    const filteredTimeline = timeline.filter((entry) => entry.startTime < roundedTime)
+
+    setTimeline([...filteredTimeline, resetEntry])
   }
 
   useEffect(() => {
@@ -214,7 +282,6 @@ function App() {
         <h1 style={{ margin: 0, fontSize: '1.5rem' }}>🏸 Badminton Video Scorecard Editor</h1>
 
         <div style={{ display: 'flex', gap: '15px' }}>
-          {/* NEW MERGE BUTTON */}
           <button
             onClick={handleMergeVideos}
             disabled={isExporting}
@@ -222,7 +289,7 @@ function App() {
               padding: '10px 20px',
               fontSize: '1rem',
               cursor: isExporting ? 'not-allowed' : 'pointer',
-              backgroundColor: '#6366f1', // Indigo color to stand out
+              backgroundColor: '#6366f1',
               color: 'white',
               border: 'none',
               borderRadius: '4px',
@@ -469,6 +536,33 @@ function App() {
                       </div>
                     )}
                   </div>
+
+                  <div style={{ width: '1px', backgroundColor: '#444', height: '40px' }}></div>
+
+                  <div style={{ flex: 1 }}>
+                    <div
+                      style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        marginBottom: '5px'
+                      }}
+                    >
+                      <span style={{ fontSize: '0.85rem', color: '#aaa' }}>Court Lighting:</span>
+                      <span style={{ fontSize: '0.85rem', fontWeight: 'bold', color: '#f59e0b' }}>
+                        {brightness === 100 ? 'Original' : `+${brightness - 100}%`}
+                      </span>
+                    </div>
+                    <input
+                      type="range"
+                      min="100"
+                      max="150"
+                      step="1"
+                      value={brightness}
+                      onChange={(e) => setBrightness(parseInt(e.target.value))}
+                      disabled={isExporting}
+                      style={{ width: '100%', cursor: 'pointer' }}
+                    />
+                  </div>
                 </div>
               </div>
 
@@ -489,14 +583,20 @@ function App() {
                   onTimeUpdate={() => {
                     if (videoRef.current) setCurrentTime(videoRef.current.currentTime)
                   }}
-                  style={{ width: '100%', display: 'block', maxHeight: '520px' }}
+                  style={{
+                    width: '100%',
+                    display: 'block',
+                    maxHeight: '520px',
+                    filter: `brightness(${brightness}%) contrast(${100 + (brightness - 100) * 0.3}%)`
+                  }}
                 />
                 <Scoreboard
+                  matchType={matchType}
                   player1={player1}
                   player2={player2}
                   score1={activeScore.p1Score}
                   score2={activeScore.p2Score}
-                  currentSet={currentSet}
+                  currentSet={dynamicSetForPreview}
                   prevScores={prevScores}
                 />
               </div>
@@ -524,6 +624,59 @@ function App() {
                   borderRadius: '8px'
                 }}
               >
+                {/* MATCH TYPE TOGGLE */}
+                <div
+                  style={{
+                    display: 'flex',
+                    gap: '15px',
+                    marginBottom: '5px',
+                    alignItems: 'center'
+                  }}
+                >
+                  <label style={{ fontSize: '0.85rem', color: '#aaa', fontWeight: 'bold' }}>
+                    Match Type:
+                  </label>
+                  <div
+                    style={{
+                      display: 'flex',
+                      backgroundColor: '#111',
+                      borderRadius: '6px',
+                      border: '1px solid #444',
+                      overflow: 'hidden'
+                    }}
+                  >
+                    <button
+                      onClick={() => setMatchType('Singles')}
+                      disabled={isExporting}
+                      style={{
+                        padding: '6px 15px',
+                        backgroundColor: matchType === 'Singles' ? '#38bdf8' : 'transparent',
+                        color: matchType === 'Singles' ? '#000' : '#aaa',
+                        border: 'none',
+                        fontWeight: 'bold',
+                        cursor: 'pointer',
+                        fontSize: '0.8rem'
+                      }}
+                    >
+                      Singles
+                    </button>
+                    <button
+                      onClick={() => setMatchType('Doubles')}
+                      disabled={isExporting}
+                      style={{
+                        padding: '6px 15px',
+                        backgroundColor: matchType === 'Doubles' ? '#38bdf8' : 'transparent',
+                        color: matchType === 'Doubles' ? '#000' : '#aaa',
+                        border: 'none',
+                        fontWeight: 'bold',
+                        cursor: 'pointer',
+                        fontSize: '0.8rem'
+                      }}
+                    >
+                      Doubles
+                    </button>
+                  </div>
+                </div>
                 <div style={{ display: 'flex', gap: '20px' }}>
                   <div style={{ flex: 1 }}>
                     <label style={{ fontSize: '0.85rem', color: '#aaa', marginRight: '8px' }}>
@@ -600,6 +753,29 @@ function App() {
                     <option value={2}>Set 2</option>
                     <option value={3}>Set 3</option>
                   </select>
+
+                  {/* START NEW SET FROM HERE BUTTON */}
+                  {currentSet >= 2 && (
+                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                      <button
+                        type="button"
+                        onClick={handleResetScoreAtCurrentTime}
+                        style={{
+                          padding: '5px 10px',
+                          backgroundColor: '#0284c7',
+                          color: '#fff',
+                          border: 'none',
+                          borderRadius: '4px',
+                          fontSize: '0.8rem',
+                          cursor: 'pointer',
+                          fontWeight: 'bold'
+                        }}
+                      >
+                        ⏱️ Start Set {currentSet} (0-0) at {Math.floor(currentTime / 60)}:
+                        {String(Math.floor(currentTime % 60)).padStart(2, '0')}
+                      </button>
+                    </div>
+                  )}
 
                   {currentSet >= 2 && (
                     <div
